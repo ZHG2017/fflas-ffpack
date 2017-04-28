@@ -26,6 +26,7 @@
 #define __FFLASFFPACK_print_utils_H
 
 #include <fflas-ffpack/fflas-ffpack-config.h>
+#include <cmath>
 #include <vector>
 // #include <pair>
 #include <list>
