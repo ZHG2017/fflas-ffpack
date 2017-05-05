@@ -56,6 +56,10 @@ benchmarks/benchmark-fspmv
 benchmarks/benchmark-fspmm
 benchmarks/benchmark-inverse
 benchmarks/benchmark-charpoly
+benchmark-ftrsm-mp
+benchmark-ftrsv
+benchmark-sgemm
+benchmark-wino
 tests/regression-check
 tests/test-compressQ
 tests/test-det
