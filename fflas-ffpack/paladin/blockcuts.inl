@@ -99,6 +99,7 @@ namespace FFLAS {
 		};
 		struct Sequential{
 			Sequential() {}
+			Sequential(size_t nth) { assert (nth == 1); }
 			template<class Cut,class Param>
 			Sequential(Parallel<Cut,Param>& ) {}
 			friend std::ostream& operator<<(std::ostream& out, const Sequential&) {
@@ -108,6 +109,30 @@ namespace FFLAS {
 		// 	CuttingStrategy method() const { return SINGLE; }
                 // // numthreads==1 ==> a single block
 		// 	StrategyParameter strategy() const { return THREADS; }
+		};
+		template <typename M=Sequential, typename F=Sequential>
+		struct RNSParallel{
+			typedef M ModulusParSeqTrait; /* for splitting the moduli */
+			typedef F OpParSeqTrait; /* for the operations done on each moduli*/
+
+			RNSParallel() : _M_PS (), _Op_PS () {}
+			RNSParallel(size_t mth) : _M_PS (mth), _Op_PS () {}
+			RNSParallel(size_t mth, size_t fth) : _M_PS (mth), _Op_PS (fth) {}
+			RNSParallel(const RNSParallel & other) : _M_PS (other.ModulusHelper()), _Op_PS (other.OpHelper()) {}
+			RNSParallel(const F & other) : _M_PS (), _Op_PS (other) {}
+
+			ModulusParSeqTrait ModulusHelper () const { return _M_PS; }
+			OpParSeqTrait OpHelper () const { return _Op_PS; }
+
+			friend std::ostream& operator<<(std::ostream& out, const RNSParallel& p) {
+				return out << "RNSParallel: (" << p.ModulusHelper() << ", "
+				                               << p.OpHelper() << ")";
+			}
+
+		private:
+			ModulusParSeqTrait _M_PS;
+			OpParSeqTrait _Op_PS;
+
 		};
 	}
 
