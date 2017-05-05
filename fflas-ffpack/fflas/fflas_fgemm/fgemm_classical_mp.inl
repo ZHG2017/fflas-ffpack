@@ -104,6 +104,46 @@ namespace FFLAS {
 					   <<"  recLevel = "<<M.recLevel<<std::endl;
 		}
 	};
+
+	template<typename RNS, typename AlgoTrait, typename MParSeqTrait, typename SParSeqTrait>
+	struct MMHelper<FFPACK::RNSInteger<RNS>, AlgoTrait, ModeCategories::DefaultTag, ParSeqHelper::RNSParallel<MParSeqTrait, SParSeqTrait> > {
+		typedef MMHelper<FFPACK::RNSInteger<RNS>, AlgoTrait, ModeCategories::DefaultTag, ParSeqHelper::RNSParallel<MParSeqTrait, SParSeqTrait> > Self_t;
+		typedef MMHelper<typename RNS::ModField, AlgoTrait, typename ModeTraits<typename RNS::ModField>::value, SParSeqTrait> HelperModField;
+		typedef ParSeqHelper::RNSParallel<MParSeqTrait, SParSeqTrait> ParSeqTrait;
+
+		int recLevel;
+		ParSeqTrait parseq;
+
+		MMHelper(const FFPACK::RNSInteger<RNS>& F)
+			: recLevel(-1), _rns (&(F.rns())) {}
+
+		MMHelper(const FFPACK::RNSInteger<RNS>& F, size_t m, size_t n, size_t k, ParSeqTrait PS=ParSeqTrait())
+			: recLevel(-1), parseq (PS), _rns (&(F.rns())) {}
+
+		MMHelper(const FFPACK::RNSInteger<RNS>& F, int wino, ParSeqTrait PS=ParSeqTrait())
+			: recLevel(wino), parseq(PS), _rns (&(F.rns())) {}
+
+		template <typename F2, typename A2, typename M2, typename PS2>
+		MMHelper(const FFPACK::RNSInteger<RNS>& F, MMHelper<F2, A2, M2, PS2> H2)
+			: recLevel(H2.recLevel), parseq(H2.parseq), _rns (&(F.rns())) {}
+
+		HelperModField fgemmHelper (size_t i) {
+			HelperModField H (_rns->_field_rns[i], recLevel, parseq.OpHelper());
+			return H;
+		}
+
+		friend std::ostream& operator<<(std::ostream& out, const Self_t& M)
+		{
+			return out << "Helper: "
+			           << typeid(AlgoTrait).name() << ' '
+			           << typeid(ModeCategories::DefaultTag).name() << ' '
+			           << M.parseq << std::endl
+			           << "  recLevel = " << M.recLevel << std::endl;
+		}
+	private:
+		const RNS *_rns;
+	};
+
 	template<typename E,
 			 typename AlgoTrait,
 			 typename ParSeqTrait>
@@ -138,6 +178,78 @@ namespace FFLAS {
 	/***********************************
 	 *** MULTIPRECISION FGEMM OVER Z ***
 	 ***********************************/
+
+	// fgemm for RnsInteger: simple loop over the moduli
+	template<typename RNS, typename AlgoTrait, typename ParSeqTrait>
+	inline  typename FFPACK::RNSInteger<RNS>::Element_ptr
+	fgemm (const FFPACK::RNSInteger<RNS> &F,
+	       const FFLAS_TRANSPOSE ta,
+	       const FFLAS_TRANSPOSE tb,
+	       const size_t m, const size_t n,const size_t k,
+	       const typename FFPACK::RNSInteger<RNS>::Element alpha,
+	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Ad, const size_t lda,
+	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Bd, const size_t ldb,
+	       const typename FFPACK::RNSInteger<RNS>::Element beta,
+	       typename FFPACK::RNSInteger<RNS>::Element_ptr Cd, const size_t ldc,
+	       MMHelper<FFPACK::RNSInteger<RNS>, AlgoTrait, ModeCategories::DefaultTag, ParSeqHelper::RNSParallel<ParSeqHelper::Sequential, ParSeqTrait> > & H)
+	{
+#ifdef PROFILE_FGEMM_MP
+		Givaro::Timer t;t.start();
+#endif
+		for(size_t i=0;i<F.size();i++){
+			auto HF = H.fgemmHelper (i);
+			FFLAS::fgemm(F.rns()._field_rns[i],ta,tb,
+						 m, n, k, alpha._ptr[i*alpha._stride],
+						 Ad._ptr+i*Ad._stride, lda,
+						 Bd._ptr+i*Bd._stride, ldb,
+						 beta._ptr[i*beta._stride],
+						 Cd._ptr+i*Cd._stride, ldc, HF);
+		}
+#ifdef PROFILE_FGEMM_MP
+		t.stop();
+		std::cerr<<"=========================================="<<std::endl
+				 <<"Pointwise fgemm : "<<t.realtime()<<" ("<<F.size()<<") moduli "<<std::endl
+				 <<"=========================================="<<std::endl;
+#endif
+		return Cd;
+	}
+
+	// fgemm for RnsInteger: handle the moduli in parallel
+	template<typename RNS, typename AlgoTrait, typename ParSeqTrait, typename Cut, typename Param>
+	inline  typename FFPACK::RNSInteger<RNS>::Element_ptr
+	fgemm (const FFPACK::RNSInteger<RNS> &F,
+	       const FFLAS_TRANSPOSE ta,
+	       const FFLAS_TRANSPOSE tb,
+	       const size_t m, const size_t n,const size_t k,
+	       const typename FFPACK::RNSInteger<RNS>::Element alpha,
+	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Ad, const size_t lda,
+	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Bd, const size_t ldb,
+	       const typename FFPACK::RNSInteger<RNS>::Element beta,
+	       typename FFPACK::RNSInteger<RNS>::Element_ptr Cd, const size_t ldc,
+	       MMHelper<FFPACK::RNSInteger<RNS>, AlgoTrait, ModeCategories::DefaultTag, ParSeqHelper::RNSParallel<ParSeqHelper::Parallel<Cut, Param>, ParSeqTrait> > & H)
+	{
+#ifdef PROFILE_FGEMM_MP
+		Givaro::Timer t;t.start();
+#endif
+		size_t rns_size = F.size();
+		auto rns_parseqhelper = H.parseq.ModulusHelper();
+		PARFOR1D(i, rns_size, rns_parseqhelper,
+			auto HF = H.fgemmHelper (i);
+			FFLAS::fgemm(F.rns()._field_rns[i],ta,tb,
+						 m, n, k, alpha._ptr[i*alpha._stride],
+						 Ad._ptr+i*Ad._stride, lda,
+						 Bd._ptr+i*Bd._stride, ldb,
+						 beta._ptr[i*beta._stride],
+						 Cd._ptr+i*Cd._stride, ldc, HF);
+			  );
+#ifdef PROFILE_FGEMM_MP
+		t.stop();
+		std::cerr<<"=========================================="<<std::endl
+				 <<"Pointwise fgemm : "<<t.realtime()<<" ("<<F.size()<<") moduli "<<std::endl
+				 <<"=========================================="<<std::endl;
+#endif
+		return Cd;
+	}
 
 	// fgemm for RnsInteger sequential version
 	template<typename RNS>
