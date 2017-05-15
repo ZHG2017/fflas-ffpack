@@ -64,6 +64,29 @@ namespace FFLAS
 
 using namespace FFLAS;
 
+typedef FFPACK::rns_double RNS;
+typedef FFPACK::RNSInteger<RNS> Field;
+typedef Field::Element_ptr Element_ptr;
+typedef Field::ConstElement_ptr ConstElement_ptr;
+
+template<typename ModParSeqTrait, typename FgemmParSeqTrait>
+static inline void
+bench_do_it (const Field ZZ, const size_t m, const size_t n, const size_t k,
+             ConstElement_ptr A, ConstElement_ptr B, Element_ptr C,
+             int moduli_th, int fgemm_th, int nbw)
+{
+  PAR_BLOCK
+  {
+    typedef ParSeqHelper::RNSParallel<ModParSeqTrait, FgemmParSeqTrait> RNSParSeqHelper;
+    typedef MMHelper<Field, MMHelperAlgo::Winograd, ModeCategories::DefaultTag, RNSParSeqHelper> RNSHelper;
+
+    RNSParSeqHelper RNSParSeq (moduli_th, fgemm_th);
+    RNSHelper WH (ZZ, nbw, RNSParSeq);
+    fgemm (ZZ, FflasNoTrans, FflasNoTrans, m, n, k, ZZ.one, A, k, B, n, ZZ.zero,
+           C, n, WH);
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -109,10 +132,6 @@ main(int argc, char *argv[])
     return 1;
   }
 
-  typedef FFPACK::rns_double RNS;
-  typedef FFPACK::RNSInteger<RNS> Field;
-  typedef Field::Element_ptr Element_ptr;
-
   RNS rns (pbits, r);
   Field ZZ(rns);
 
@@ -136,15 +155,24 @@ main(int argc, char *argv[])
     if (i)
       chrono.start();
               
-    PAR_BLOCK
-    {
-      typedef ParSeqHelper::Parallel<> PPar;
-      typedef ParSeqHelper::RNSParallel<PPar, PPar> RNSParPar;
-      typedef MMHelper<Field, MMHelperAlgo::Winograd, ModeCategories::DefaultTag, RNSParPar> RNSHelper;
-      RNSParPar RNSPP (moduli_th, fgemm_th);
-      RNSHelper WH (ZZ, nbw, RNSPP);
-      fgemm (ZZ, FflasNoTrans, FflasNoTrans, m,n,k, ZZ.one, A, k, B, n, ZZ.zero, C,n, WH);
-    }
+    typedef CuttingStrategy::Row ROW;
+    typedef CuttingStrategy::Column COLUMN;
+    typedef CuttingStrategy::Block BLOCK;
+    typedef CuttingStrategy::Recursive REC;
+
+    typedef StrategyParameter::Threads THREADS;
+
+    typedef ParSeqHelper::Parallel<BLOCK, THREADS> PPar;
+    typedef ParSeqHelper::Sequential PSeq;
+
+    if (moduli_th == 1 && fgemm_th == 1)
+      bench_do_it<PSeq, PSeq> (ZZ, m, n, k, A, B, C, moduli_th, fgemm_th, nbw);
+    else if (moduli_th == 1) /* && fgemm_th > 1 */
+      bench_do_it<PSeq, PPar> (ZZ, m, n, k, A, B, C, moduli_th, fgemm_th, nbw);
+    else if (fgemm_th == 1) /* && moduli_th > 1 */
+      bench_do_it<PPar, PSeq> (ZZ, m, n, k, A, B, C, moduli_th, fgemm_th, nbw);
+    else /* moduli_th > 1 && fgemm_th > 1 */
+      bench_do_it<PPar, PPar> (ZZ, m, n, k, A, B, C, moduli_th, fgemm_th, nbw);
 
     if (i)
     {
