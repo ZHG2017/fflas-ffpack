@@ -214,6 +214,24 @@ namespace FFLAS {
 		return Cd;
 	}
 
+	// fgemm for RnsInteger: Sequential => Sequential, Sequential
+	template<typename RNS>
+	inline  typename FFPACK::RNSInteger<RNS>::Element_ptr
+	fgemm (const FFPACK::RNSInteger<RNS> &F,
+	       const FFLAS_TRANSPOSE ta,
+	       const FFLAS_TRANSPOSE tb,
+	       const size_t m, const size_t n,const size_t k,
+	       const typename FFPACK::RNSInteger<RNS>::Element alpha,
+	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Ad, const size_t lda,
+	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Bd, const size_t ldb,
+	       const typename FFPACK::RNSInteger<RNS>::Element beta,
+	       typename FFPACK::RNSInteger<RNS>::Element_ptr Cd, const size_t ldc,
+	       MMHelper<FFPACK::RNSInteger<RNS>, MMHelperAlgo::Classic,ModeCategories::DefaultTag, ParSeqHelper::Sequential> & H)
+	{
+		MMHelper<FFPACK::RNSInteger<RNS>, MMHelperAlgo::Winograd, ModeCategories::DefaultTag, ParSeqHelper::RNSParallel<ParSeqHelper::Sequential, ParSeqHelper::Sequential> > H2(F);
+		return fgemm (F, ta, tb, m, n, k, alpha, Ad, lda, Bd, ldb, beta, Cd, ldc, H2);
+	}
+
 	// fgemm for RnsInteger: handle the moduli in parallel
 	template<typename RNS, typename AlgoTrait, typename ParSeqTrait, typename Cut, typename Param>
 	inline  typename FFPACK::RNSInteger<RNS>::Element_ptr
@@ -250,43 +268,6 @@ namespace FFLAS {
 		);
 #ifdef PROFILE_FGEMM_MP
 		t.stop();
-		std::cerr<<"=========================================="<<std::endl
-				 <<"Pointwise fgemm : "<<t.realtime()<<" ("<<F.size()<<") moduli "<<std::endl
-				 <<"=========================================="<<std::endl;
-#endif
-		return Cd;
-	}
-
-	// fgemm for RnsInteger sequential version
-	template<typename RNS>
-	inline  typename FFPACK::RNSInteger<RNS>::Element_ptr 
-	fgemm (const FFPACK::RNSInteger<RNS> &F,
-	       const FFLAS_TRANSPOSE ta,
-	       const FFLAS_TRANSPOSE tb,
-	       const size_t m, const size_t n,const size_t k,
-	       const typename FFPACK::RNSInteger<RNS>::Element alpha,
-	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Ad, const size_t lda,
-	       typename FFPACK::RNSInteger<RNS>::ConstElement_ptr Bd, const size_t ldb,
-	       const typename FFPACK::RNSInteger<RNS>::Element beta,
-	       typename FFPACK::RNSInteger<RNS>::Element_ptr Cd, const size_t ldc,
-	       MMHelper<FFPACK::RNSInteger<RNS>, MMHelperAlgo::Classic,ModeCategories::DefaultTag, ParSeqHelper::Sequential> & H)
-	{		
-		// compute each fgemm componentwise
-#ifdef PROFILE_FGEMM_MP
-		Givaro::Timer t;t.start();
-#endif
-		for(size_t i=0;i<F.size();i++){
-			MMHelper<typename RNS::ModField,MMHelperAlgo::Winograd> H2(F.rns()._field_rns[i], H.recLevel, H.parseq);
-			FFLAS::fgemm(F.rns()._field_rns[i],ta,tb,
-						 m, n, k, alpha._ptr[i*alpha._stride],
-						 Ad._ptr+i*Ad._stride, lda,
-						 Bd._ptr+i*Bd._stride, ldb,
-						 beta._ptr[i*beta._stride],
-						 Cd._ptr+i*Cd._stride, ldc, H2);
-		}
-#ifdef PROFILE_FGEMM_MP
-		t.stop();
-
 		std::cerr<<"=========================================="<<std::endl
 				 <<"Pointwise fgemm : "<<t.realtime()<<" ("<<F.size()<<") moduli "<<std::endl
 				 <<"=========================================="<<std::endl;
