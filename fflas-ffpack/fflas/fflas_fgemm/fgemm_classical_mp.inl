@@ -233,16 +233,21 @@ namespace FFLAS {
 #endif
 		size_t rns_size = F.size();
 		auto rns_parseqhelper = H.parseq.ModulusHelper();
-		FOR1D(i, rns_size, rns_parseqhelper,
-		{
-			auto HF = H.fgemmHelper (i);
-			FFLAS::fgemm(F.rns()._field_rns[i],ta,tb,
-			             m, n, k, alpha._ptr[i*alpha._stride],
-			             Ad._ptr+i*Ad._stride, lda,
-			             Bd._ptr+i*Bd._stride, ldb,
-			             beta._ptr[i*beta._stride],
-			             Cd._ptr+i*Cd._stride, ldc, HF);
-		});
+		FORBLOCK1D(iter, rns_size, rns_parseqhelper,
+			TASK(MODE(CONSTREFERENCE(F,H)),
+			{
+				for(auto i=iter.begin(); i!=iter.end(); ++i)
+				{
+					auto HF = H.fgemmHelper (i);
+					FFLAS::fgemm(F.rns()._field_rns[i],ta,tb,
+					             m, n, k, alpha._ptr[i*alpha._stride],
+					             Ad._ptr+i*Ad._stride, lda,
+					             Bd._ptr+i*Bd._stride, ldb,
+					             beta._ptr[i*beta._stride],
+					             Cd._ptr+i*Cd._stride, ldc, HF);
+				}
+			})
+		);
 #ifdef PROFILE_FGEMM_MP
 		t.stop();
 		std::cerr<<"=========================================="<<std::endl
